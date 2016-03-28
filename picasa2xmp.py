@@ -14,7 +14,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with metaSave.  If not, see <http://www.gnu.org/licenses/>.
+along with picasa2xmp.  If not, see <http://www.gnu.org/licenses/>.
 
 
 Copyright 2016 Christoph G. Keller <christoph.keller@gmx.net>
@@ -31,6 +31,7 @@ import sys
 import fnmatch
 import shutil
 
+# This is really lazy. Path to your picasa3meta
 sys.path.append(os.path.join(os.getenv("HOME"), 'src', 'picasa3meta' ))
 from picasa3meta import thumbindex, pmpinfo, iniinfo, exiv2meta, contacts
 
@@ -38,6 +39,8 @@ from picasa3meta import thumbindex, pmpinfo, iniinfo, exiv2meta, contacts
 
 
 def testSys():
+    ''' Test if the required command line tools are available'''
+    
     cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
 
     if not cmd_exists('exiv2'):
@@ -65,26 +68,38 @@ def locate(pattern, start):
 
 
 def writexmp(imgfname, outDir, rects, names):
-    ''' Write the data to a xmp file'''
+    ''' Write the data to a xmp file
+    TODO: Figure out how to use pyexiv to do that
 
-    # we need a base xmp file first
+    
+    imgfname - full path of the current image
+    outDir   - directory where to store the meta data
+    rects    - list if face rectangles of the form [x,y,w,h]
+    names    - list of names
+    '''
+
+    assert(len(rects) == len(names))
+
     origxmp = imgfname + '.xmp'
     xmpfname = imgfname.replace(os.path.dirname(imgfname), outDir) + '.xmp'
     
     if not os.path.isfile(origxmp):
+        # a xmp file for the image does not exist, create it
         cmd = 'exiv2 -f -eX -l %s %s ' % (outDir, imgfname)
-
         result = os.system(cmd)
         if result != 0:
             return
+        # would be great to have an out file option for exiv2.
+        # This copying as a bit of a pain
         tmpxmp = imgfname.replace(os.path.dirname(imgfname), outDir)
         tmpxmp, file_extension = os.path.splitext(tmpxmp)
         tmpxmp = tmpxmp + '.xmp'
         shutil.move(tmpxmp, xmpfname)
     else:
+        # there was a xmp file at with the image, so we use it
         shutil.copyfile(imgfname + '.xmp', xmpfname)
         
-    
+    # now start adding the regions
     cmd = 'exiv2 -M "set Xmp.mwg-rs.Regions/mwg-rs:RegionList ''" %s' % xmpfname
     os.system(cmd.encode('utf-8'))
 
@@ -104,14 +119,16 @@ def writexmp(imgfname, outDir, rects, names):
         cmd = 'exiv2 -M \"set Xmp.mwg-rs.Regions/mwg-rs:RegionList[%d]/mwg-rs:Area/stArea:unit normalized\" %s' % (idx+1, xmpfname)
         os.system(cmd.encode('utf-8'))
 
+        # now this is even worse... how to do that with exiv2?
         s = re.sub(r'^"|"$', '', names[idx])
         cmd = 'exiftool -q -q  -overwrite_original -XMP:HierarchicalSubject+=\"people|%s\" %s' % (s, xmpfname)
         os.system(cmd.encode('utf-8'))
 
         
 def parseFaces(L):
-    ''' 
+    ''' Parse the string L from the picase.ini to detect the rectangles
     
+    returns list of rectangles [[x1,y1,w1,h1], [x2,y2,w2,h2]]
     '''
     imgrects=[]
     irects=L.split(':')
@@ -133,7 +150,9 @@ def parseFaces(L):
     return imgrects
 
 def parseNames(L):
-    '''
+    ''' Parse the string L from the picase.ini to detect the names
+
+    returns list of names
     '''
     ifaces=L.split(':')
     ifaces=ifaces[1]
@@ -141,9 +160,7 @@ def parseNames(L):
     return imgfaces
 
 def main():
-    '''
-
-    
+    ''' Gues what main does...
     '''
 
     parser = argparse.ArgumentParser(
